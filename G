@@ -1,0 +1,122 @@
+
+de natural_cubic_spline_1d(y, x_nodes, x_new):
+    x = np.asarray(x_nodes, dtype=float)
+    y = np.asarray(y, dtype=float)
+    x_new = np.asarray(x_new, dtype=float)
+    n = len(x)
+    if n == 2:
+        return np.interp(x_new, x, y)
+    h = np.diff(x)
+    A = np.zeros((n, n), dtype=float)
+    rhs = np.zeros(n, dtype=float)
+    A[0, 0] = 1.0
+    A[-1, -1] = 1.0
+    for i in range(1, n - 1):
+        A[i, i - 1] = h[i - 1]
+        A[i, i] = 2.0 * (h[i - 1] + h[i])
+        A[i, i + 1] = h[i]
+        rhs[i] = 6.0 * (
+            (y[i + 1] - y[i]) / h[i]
+            - (y[i] - y[i - 1]) / h[i - 1]
+        )
+    M = np.linalg.solve(A, rhs)
+    out = np.empty_like(x_new, dtype=float)
+    idx = np.searchsorted(x, x_new, side='right') - 1
+    idx = np.clip(idx, 0, n - 2)
+    for k, t in enumerate(x_new):
+        i = idx[k]
+        dx = t - x[i]
+        hi = h[i]
+        b = (y[i + 1] - y[i]) / hi - hi * (2.0 * M[i] + M[i + 1]) / 6.0
+        c = M[i] / 2.0
+        d = (M[i + 1] - M[i]) / (6.0 * hi)
+        out[k] = y[i] + b * dx + c * dx**2 + d * dx**3
+    return out
+def interpolate_letter_spline(seq, step=0.5):
+    n = seq.shape[0]
+    t_nodes = np.arange(n, dtype=float)
+    t_new = np.linspace(0, n - 1, 2 * n - 1)
+    out = np.empty((len(t_new), 40, 2), dtype=float)
+    for p in range(40):
+        for c in range(2):
+            out[:, p, c] = natural_cubic_spline_1d(
+                seq[:, p, c], t_nodes, t_new
+            )
+    return out
+SplineLipsLetters = {
+    letter: interpolate_letter_spline(seq)
+    for letter, seq in LipsData.items()
+}
+animate_lips(SplineLipsLetters['А'], interval=100)
+ Это задание 2.1
+
+def get_letter(data, ch):
+    variants = [ch, ch.upper(), ch.lower()]
+    if ch.lower() == 'ё':
+        variants += ['Ё', 'Е', 'е']
+    for v in variants:
+        if v in data:
+            return data[v]
+    raise KeyError(f"Нет буквы {ch!r} в LipsData")
+def trim_auto(seq, threshold=0.003, margin=1):
+    if seq.shape[0] <= 2:
+        return seq
+    diff = np.linalg.norm(np.diff(seq, axis=0), axis=(1, 2))
+    active = np.where(diff > threshold)[0]
+    if len(active) == 0:
+        return seq
+    start = max(0, active[0] - margin)
+    end = min(seq.shape[0], active[-1] + margin + 2)
+    return seq[start:end]
+def trim_manual(seq, start=0, end=None):
+    return seq[start:end]
+def combine_and_interpolate(
+    word,
+    data,
+    method='spline',
+    trim_config=None,
+    auto_trim=False,
+    step=0.5
+):
+    parts = []
+    for ch in word:
+        seq = get_letter(data, ch)
+        if trim_config is not None and ch in trim_config:
+            a, b = trim_config[ch]
+            seq = trim_manual(seq, a, b)
+        elif auto_trim:
+            seq = trim_auto(seq)
+        parts.append(seq)
+    combined = np.concatenate(parts, axis=0)
+    if method == 'lagrange':
+        return interpolate_letter_lagrange(combined, step=step)
+    elif method == 'spline':
+        return interpolate_letter_spline(combined, step=step)
+    else:
+        raise ValueError("method должен быть 'lagrange' или 'spline'")
+Это задание 2.2
+
+trim_config = {
+    'а': (1, -1),
+    'б': (1, -1),
+    'в': (1, -1),
+    'о': (1, -1),
+    'ё': (1, -1),
+}
+pairs = ['аб', 'ба', 'абв', 'оба']
+for pair in pairs:
+    lag = combine_and_interpolate(
+        pair, LipsData,
+        method='lagrange',
+        trim_config=trim_config
+    )
+    spl = combine_and_interpolate(
+        pair, LipsData,
+        method='spline',
+        trim_config=trim_config
+    )
+
+    print(f"Связка: {pair}")
+    # animate_lips(lag, interval=50)   # Лагранж
+    # animate_lips(spl, interval=50)   # Сплайн
+Это для связокf
